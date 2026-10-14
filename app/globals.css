@@ -1,0 +1,187 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #e9eef5;
+  --foreground: #0f172a;
+  --card: #f2f5fa;
+  --card-foreground: #0f172a;
+  --border: #d5dde8;
+  --accent: #3b82f6;
+  --accent-foreground: #ffffff;
+}
+
+.dark {
+  --background: #090d16;
+  --foreground: #f8fafc;
+  --card: #121826;
+  --card-foreground: #f8fafc;
+  --border: #1e293b;
+  --accent: #3b82f6;
+  --accent-foreground: #ffffff;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================================
+   NEUMORPHISM (Soft UI) DESIGN SYSTEM
+   Dual-directional lighting with top-left highlight and bottom-right shadow
+   ========================================================================== */
+
+/* Main Neumorphic Card (Raised) */
+.neu-card {
+  background: #f4f7fb;
+  box-shadow: 12px 12px 28px rgba(163, 177, 198, 0.45), -12px -12px 28px rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+.dark .neu-card {
+  background: #121826;
+  box-shadow: 14px 14px 35px rgba(0, 0, 0, 0.75), -8px -8px 24px rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Neumorphic Inset / Sunken Container (for Input Bar and Track) */
+.neu-inset {
+  background: #e9edf3;
+  box-shadow: inset 3px 3px 7px rgba(163, 177, 198, 0.45), inset -3px -3px 7px rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(163, 177, 198, 0.2);
+}
+.dark .neu-inset {
+  background: #0c121e;
+  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.75), inset -2px -2px 6px rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Neumorphic Elevated Surface / Panels (for Inner Cards and Preview) */
+.neu-surface {
+  background: #f2f5fa;
+  box-shadow: 6px 6px 16px rgba(163, 177, 198, 0.35), -6px -6px 16px rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+.dark .neu-surface {
+  background: #141c2c;
+  box-shadow: 6px 6px 18px rgba(0, 0, 0, 0.65), -3px -3px 10px rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Neumorphic Elevated Pill Buttons (for Platform Badges & Tabs) */
+.neu-pill {
+  background: #f0f4f9;
+  box-shadow: 4px 4px 10px rgba(163, 177, 198, 0.35), -4px -4px 10px rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+.neu-pill:hover {
+  box-shadow: 5px 5px 12px rgba(163, 177, 198, 0.45), -5px -5px 12px rgba(255, 255, 255, 1);
+}
+.neu-pill:active {
+  box-shadow: inset 2px 2px 5px rgba(163, 177, 198, 0.45), inset -2px -2px 5px rgba(255, 255, 255, 0.9);
+}
+.dark .neu-pill {
+  background: #151d2e;
+  box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.6), -2px -2px 8px rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.dark .neu-pill:hover {
+  box-shadow: 5px 5px 14px rgba(0, 0, 0, 0.7), -3px -3px 10px rgba(255, 255, 255, 0.04);
+}
+.dark .neu-pill:active {
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.75), inset -1px -1px 3px rgba(255, 255, 255, 0.04);
+}
+
+/* Neumorphic Circular Buttons (for Theme Toggle and Settings) */
+.neu-circle {
+  background: #f0f4f9;
+  box-shadow: 3px 3px 8px rgba(163, 177, 198, 0.4), -3px -3px 8px rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+.neu-circle:hover {
+  box-shadow: 4px 4px 10px rgba(163, 177, 198, 0.5), -4px -4px 10px rgba(255, 255, 255, 1);
+}
+.neu-circle:active {
+  box-shadow: inset 2px 2px 5px rgba(163, 177, 198, 0.45), inset -2px -2px 5px rgba(255, 255, 255, 0.9);
+}
+.dark .neu-circle {
+  background: #161e30;
+  box-shadow: 3px 3px 9px rgba(0, 0, 0, 0.65), -2px -2px 6px rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.dark .neu-circle:hover {
+  box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.75), -2px -2px 8px rgba(255, 255, 255, 0.04);
+}
+.dark .neu-circle:active {
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.8), inset -1px -1px 3px rgba(255, 255, 255, 0.04);
+}
+
+/* Neumorphic 3D Blue Action Button */
+.neu-blue-btn {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4), 0 2px 4px rgba(37, 99, 235, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.neu-blue-btn:hover {
+  background: linear-gradient(135deg, #4f90f7 0%, #1d4ed8 100%);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.52), 0 3px 6px rgba(37, 99, 235, 0.3);
+}
+.neu-blue-btn:active {
+  box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.35);
+  transform: scale(0.99);
+}
+
+/* Radio button 3D Neumorphic indent */
+.neu-radio-unselected {
+  background: #eef2f7;
+  box-shadow: inset 1.5px 1.5px 3px rgba(163, 177, 198, 0.4), inset -1.5px -1.5px 3px rgba(255, 255, 255, 0.9);
+}
+.dark .neu-radio-unselected {
+  background: #0f1524;
+  box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.7), inset -1px -1px 3px rgba(255, 255, 255, 0.03);
+}
+
+.neu-radio-selected {
+  background: #ffffff;
+  box-shadow: 2px 2px 5px rgba(163, 177, 198, 0.3), -2px -2px 5px rgba(255, 255, 255, 0.9);
+}
+.dark .neu-radio-selected {
+  background: #162035;
+  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6), -1px -1px 4px rgba(255, 255, 255, 0.03);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #a1a1aa;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+}
