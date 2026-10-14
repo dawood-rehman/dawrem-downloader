@@ -86,6 +86,32 @@ export async function getMediaMetadataWithYtDlp(url: string): Promise<YtDlpDumpR
 
   // Handle mapped errors
   const errMessage = lastError?.stderr || lastError?.message || String(lastError);
+  const diagnosticText = String(errMessage)
+    .replace(/https?:\/\/[^\s"']+/gi, '[source-url]')
+    .slice(-2_000);
+  console.error('[YTDLP_METADATA_EXTRACTION_FAILED]', {
+    code: lastError?.code,
+    exitCode: lastError?.exitCode,
+    details: diagnosticText,
+  });
+
+  if (/sign in to confirm|not a bot|confirm you.?re not a bot|bot check/i.test(errMessage)) {
+    throw new DownloaderError(
+      'The source platform rejected this server request.',
+      'SOURCE_BLOCKED',
+      503,
+      'This platform is temporarily rejecting requests from our hosting network. Please try again later or use another public link.'
+    );
+  }
+
+  if (/spawn .*ENOENT|ENOENT.*spawn|not found.*yt-dlp/i.test(errMessage)) {
+    throw new DownloaderError(
+      'The yt-dlp executable is unavailable in this deployment.',
+      'EXTRACTOR_UNAVAILABLE',
+      503,
+      'The media extractor is not available right now. Please try again later.'
+    );
+  }
 
   if (
     errMessage.includes('Private video') ||
