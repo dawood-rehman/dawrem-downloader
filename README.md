@@ -114,18 +114,30 @@ The scripts under `scripts/` include provider experiments and may contact extern
 
 ## Security and deployment limits
 
-- The proxy rate limiter and download-job registry are process-local. They do not coordinate across multiple Node processes, serverless instances, or regions. Use a single persistent Node instance for this implementation, or replace them with shared storage/queue infrastructure before horizontal scaling.
-- The host must provide a writable temporary directory with enough disk space, plus working `yt-dlp`, FFmpeg, and FFprobe binaries. Serverless platforms with short execution limits or ephemeral storage may not support the download pipeline.
+- Download jobs and progress are stored in Upstash Redis, while finished media is stored in a private Vercel Blob store. The worker uses Next.js `after()` and must finish within the Vercel Function duration limit; downloads that exceed that limit fail and can be retried.
+- Vercel deployments need Fluid Compute enabled, a 300-second function duration, an Upstash Redis integration, and a private Blob store connected to the project. The function uses `/tmp` for its temporary work files and removes them after upload.
+- The Vercel Function bundle must include Linux `yt-dlp`, FFmpeg, and FFprobe binaries. `next.config.mjs` includes their runtime files in the API function traces.
 - The proxy rate limit is only as reliable as the client IP header supplied by the hosting proxy. Deploy behind a trusted proxy and configure its forwarded headers correctly.
 - Direct media URLs are checked for HTTPS and non-public DNS results before download. DNS can change between validation and connection; this implementation does not pin the resolved address.
-- Temporary media and job state are deleted on a best-effort basis. Monitor disk usage and confirm cleanup on the target host.
+- Job records expire from Redis after 30 minutes. Downloaded artifacts are private and delivered through a short-lived signed Blob URL. Artifacts remain in Blob until deleted; add scheduled cleanup before using this for public traffic.
 - `NEXT_PUBLIC_*` values are public browser configuration, not secrets. Never place credentials, API keys, or private tokens in them.
+
+### Connect storage for Vercel
+
+1. In the Vercel project, open **Storage** and add an **Upstash Redis** integration. Connect it to this project for Production and Preview so Vercel injects `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+2. In the same project, create a **private Vercel Blob** store and connect it to the project. Vercel injects the Blob credentials.
+3. In **Settings → Functions**, make sure **Fluid Compute** is enabled. New Vercel projects have it enabled by default.
+4. Redeploy after connecting both stores. The downloader will show a storage configuration error until those integrations are available to the deployment.
 
 ## Publishing, privacy, and Adsterra
 
 Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_SITE_URL` and
 `NEXT_PUBLIC_CONTACT_EMAIL` to the real production values. Do not publish with
 the example domain or mailbox.
+
+Adsterra settings are optional and do not enable media extraction. No Adsterra
+credentials are required for downloader jobs; Redis and Blob are the Vercel
+storage integrations required for persistent progress and finished files.
 
 The Adsterra slot is disabled until both `NEXT_PUBLIC_ADSTERRA_SCRIPT_URL` and
 `NEXT_PUBLIC_ADSTERRA_CONTAINER_ID` are set. Add the exact script URL and

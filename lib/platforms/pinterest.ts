@@ -39,16 +39,32 @@ export class PinterestHandler implements PlatformHandler {
 
       const html = typeof res.data === 'string' ? res.data : '';
 
-      // Extract Pinterest images
+      // Pinterest embeds escaped URLs in JSON as well as ordinary HTML. Only
+      // accept actual pinimg media paths; the old broad match also picked up
+      // unrelated page artwork and invented /originals/ URLs that may not exist.
+      const normalizedHtml = html
+        .replace(/\\u002f/gi, '/')
+        .replace(/\\\//g, '/')
+        .replace(/&amp;/g, '&');
       const rawImages = Array.from(
-        new Set(html.match(/https:\/\/i\.pinimg\.com\/[^\s"'<>]+\.(jpg|png|webp)/gi) || [])
-      ) as string[];
+        new Set(
+          normalizedHtml.match(
+            /https:\/\/i\.pinimg\.com\/(?:originals|736x|564x|474x|236x|1200x|600x)\/[^\s"'<>\\]+?\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>\\]*)?/gi
+          ) || []
+        )
+      ).filter((imageUrl) => {
+        try {
+          const parsed = new URL(imageUrl);
+          return parsed.hostname === 'i.pinimg.com' &&
+            !/placeholder|default|no[-_]?image|avatar/i.test(parsed.pathname);
+        } catch {
+          return false;
+        }
+      });
 
       const originalImg = rawImages.find((u) => u.includes('/originals/'));
       const img736 = rawImages.find((u) => u.includes('/736x/'));
-      const bestImg =
-        originalImg ||
-        (img736 ? img736.replace('/736x/', '/originals/') : rawImages[0]);
+      const bestImg = originalImg || img736 || rawImages[0];
 
       // Check for videos
       const videoMatches =
@@ -103,7 +119,7 @@ export class PinterestHandler implements PlatformHandler {
             supportsWatermarkRemoval: false,
           });
 
-          // Also provide a standard HD image option
+          // Offer a second size only when Pinterest supplied that exact URL.
           if (img736 && img736 !== bestImg) {
             formats.push({
               formatId: 'pin-image-hd',

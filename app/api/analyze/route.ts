@@ -5,6 +5,8 @@ import { formatErrorResponse, DownloaderError } from '@/lib/errors/downloader-er
 import { readJsonBody, requestBodyErrorResponse } from '@/lib/http-json';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {

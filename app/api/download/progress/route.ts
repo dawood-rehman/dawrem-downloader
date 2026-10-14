@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const job = getDownloadJob(jobId);
+  const job = await getDownloadJob(jobId);
   if (!job) {
     return NextResponse.json(
       { success: false, error: { code: 'NOT_FOUND', message: 'Download job not found or expired.' } },

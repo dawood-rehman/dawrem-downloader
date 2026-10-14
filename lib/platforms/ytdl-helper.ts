@@ -7,6 +7,7 @@ import {
 } from '../errors/downloader-errors';
 import { formatBytes } from '../media/formatter';
 import { MediaFormat } from './types';
+import { APP_CONFIG } from '../config';
 
 export interface YtDlpDumpResult {
   id?: string;
@@ -62,8 +63,10 @@ export async function getMediaMetadataWithYtDlp(url: string): Promise<YtDlpDumpR
         options.extractorArgs = clientArg;
       }
 
-      const rawResult = await youtubedl(url, options);
-      return rawResult as unknown as YtDlpDumpResult;
+      const rawResult = await youtubedl.exec(url, options, {
+        timeout: APP_CONFIG.analysisTimeoutMs,
+      });
+      return JSON.parse(rawResult.stdout) as YtDlpDumpResult;
     } catch (err: unknown) {
       lastError = err;
       const errMessage = (err as Error)?.message || String(err);

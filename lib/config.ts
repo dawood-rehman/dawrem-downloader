@@ -1,4 +1,5 @@
 import path from 'path';
+import os from 'os';
 
 // Resolve FFmpeg & FFprobe paths safely
 let ffmpegBinaryPath = 'ffmpeg';
@@ -49,7 +50,11 @@ export const APP_CONFIG = {
   description: 'Clean, multi-platform media downloader with watermark removal and format conversion',
   
   // Storage
-  tempDir: process.env.TEMP_DIR || path.join(process.cwd(), 'tmp_downloads'),
+  tempDir:
+    process.env.TEMP_DIR ||
+    (process.env.VERCEL
+      ? path.join(os.tmpdir(), 'dawrem-downloader')
+      : path.join(process.cwd(), 'tmp_downloads')),
   tempFileTtlMs: 15 * 60 * 1000, // 15 minutes TTL for temporary files
   
   // Binaries

@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = cancelDownloadJob(jobId);
+  const result = await cancelDownloadJob(jobId);
   if (result === 'not_found') {
     return NextResponse.json(
       { success: false, error: { code: 'NOT_FOUND', message: 'Download job not found or expired.' } },

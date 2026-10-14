@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { DownloadRequestSchema, validateAndSanitizeUrl } from '@/lib/validation/url-validator';
-import { createAndStartDownloadJob } from '@/lib/media/download-job';
+import { createAndStartDownloadJob, runDownloadJob } from '@/lib/media/download-job';
 import { formatErrorResponse, DownloaderError } from '@/lib/errors/downloader-errors';
 import { readJsonBody, requestBodyErrorResponse } from '@/lib/http-json';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,6 +43,12 @@ export async function POST(req: NextRequest) {
       formatId: parsed.data.formatId,
       platform: parsed.data.platform,
       removeWatermark: parsed.data.removeWatermark,
+    });
+
+    // Vercel may route every request to a different function instance. Keep the
+    // worker alive for this invocation and persist all state outside its memory.
+    after(async () => {
+      await runDownloadJob(job.id);
     });
 
     return NextResponse.json({

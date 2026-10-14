@@ -11,6 +11,7 @@ import { formatBytes, sanitizeFilename } from './formatter';
 import { processMediaWithFFmpeg, muxVideoAndAudio } from './processor';
 import { analyzeMedia } from '../platforms';
 import { FileSizeLimitError } from '../errors/downloader-errors';
+import { assertVercelStorageConfigured, getJobRedis, uploadCompletedMedia } from './vercel-storage';
 
 export type JobStatus = 'Preparing' | 'Downloading' | 'Processing' | 'Completed' | 'Failed' | 'Cancelled';
 
@@ -30,17 +31,19 @@ export interface DownloadJob {
   speedFormatted: string;
   error?: string;
   finalFilePath?: string;
+  blobPath?: string;
   fileName?: string;
   mimeType?: string;
   createdAt: number;
   updatedAt: number;
 }
 
-// Global in-memory active download jobs registry shared across all Next.js worker threads and routes
+// Local acceleration and cancellation handles. Redis is authoritative across Vercel invocations.
 declare global {
   var __dawrem_jobs_registry__: Map<string, DownloadJob> | undefined;
   var __dawrem_job_controllers__: Map<string, AbortController> | undefined;
   var __dawrem_job_children__: Map<string, import('child_process').ChildProcess> | undefined;
+  var __dawrem_job_write_queues__: Map<string, Promise<void>> | undefined;
 }
 
 const jobsRegistry: Map<string, DownloadJob> =
@@ -52,49 +55,53 @@ const jobControllers =
 const jobChildren =
   globalThis.__dawrem_job_children__ ||
   (globalThis.__dawrem_job_children__ = new Map<string, import('child_process').ChildProcess>());
+const jobWriteQueues =
+  globalThis.__dawrem_job_write_queues__ ||
+  (globalThis.__dawrem_job_write_queues__ = new Map<string, Promise<void>>());
+const lastPersistedAt = new Map<string, number>();
+const JOB_TTL_SECONDS = 30 * 60;
 
-function getJobsStateDir(): string {
-  const dir = path.join(APP_CONFIG.tempDir, 'job_states');
-  if (!fs.existsSync(dir)) {
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-    } catch {}
-  }
-  return dir;
-}
-
-export function saveJobState(job: DownloadJob): void {
+export function saveJobState(job: DownloadJob, force = false): Promise<void> {
   jobsRegistry.set(job.id, job);
-  try {
-    const dir = getJobsStateDir();
-    fs.writeFileSync(path.join(dir, `${job.id}.json`), JSON.stringify(job));
-  } catch {}
+  const now = Date.now();
+  if (!force && now - (lastPersistedAt.get(job.id) || 0) < 1_000) return Promise.resolve();
+  lastPersistedAt.set(job.id, now);
+
+  const previous = jobWriteQueues.get(job.id) || Promise.resolve();
+  const current = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await getJobRedis().set(`dawrem:job:${job.id}`, JSON.stringify(job), { ex: JOB_TTL_SECONDS });
+    });
+  jobWriteQueues.set(job.id, current);
+  current.catch((error) => console.error('[JOB_STATE_PERSIST_ERROR]', job.id, error));
+  return current;
 }
 
 /**
- * Retrieves an existing job by ID with memory + disk backup.
+ * Retrieves an existing job by ID from shared Redis state.
  */
-export function getDownloadJob(jobId: string): DownloadJob | undefined {
+export async function getDownloadJob(jobId: string): Promise<DownloadJob | undefined> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(jobId)) {
     return undefined;
   }
-  const memJob = jobsRegistry.get(jobId);
-  if (memJob) return memJob;
-
   try {
-    const filePath = path.join(getJobsStateDir(), `${jobId}.json`);
-    if (fs.existsSync(filePath)) {
-      const diskJob = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as DownloadJob;
-      jobsRegistry.set(jobId, diskJob);
-      return diskJob;
+    const stored = await getJobRedis().get<string>(`dawrem:job:${jobId}`);
+    if (stored) {
+      const job = JSON.parse(stored) as DownloadJob;
+      jobsRegistry.set(jobId, job);
+      return job;
     }
-  } catch {}
+  } catch (error) {
+    console.error('[JOB_STATE_READ_ERROR]', jobId, error);
+    throw error;
+  }
 
-  return undefined;
+  return jobsRegistry.get(jobId);
 }
 
 /**
- * Creates and initiates a background download job.
+ * Creates a durable job record. The route starts its worker with Next.js after().
  */
 export async function createAndStartDownloadJob(params: {
   url: string;
@@ -102,6 +109,7 @@ export async function createAndStartDownloadJob(params: {
   platform: string;
   removeWatermark?: boolean;
 }): Promise<DownloadJob> {
+  assertVercelStorageConfigured();
   const jobId = uuidv4();
   const job: DownloadJob = {
     id: jobId,
@@ -122,39 +130,54 @@ export async function createAndStartDownloadJob(params: {
   };
 
   jobsRegistry.set(jobId, job);
-  saveJobState(job);
-  const controller = new AbortController();
-  jobControllers.set(jobId, controller);
-
-  // Execute processing asynchronously
-  runJobPipeline(job, controller.signal).catch((err) => {
-    console.error(`[JOB_FAILED] Job ${jobId} failed:`, err);
-    job.status = controller.signal.aborted ? 'Cancelled' : 'Failed';
-    job.error = controller.signal.aborted ? 'Download cancelled.' : err.message || 'Media download failed.';
-    job.updatedAt = Date.now();
-    saveJobState(job);
-  }).finally(() => {
-    jobControllers.delete(jobId);
-    jobChildren.delete(jobId);
-  });
+  await saveJobState(job, true);
 
   return job;
 }
 
-export function cancelDownloadJob(jobId: string): 'not_found' | 'not_running' | DownloadJob {
-  const job = getDownloadJob(jobId);
+export async function runDownloadJob(jobId: string): Promise<void> {
+  const job = await getDownloadJob(jobId);
+  if (!job || job.status === 'Completed' || job.status === 'Failed' || job.status === 'Cancelled') return;
+
+  const controller = new AbortController();
+  jobControllers.set(jobId, controller);
+  const cancelPoll = setInterval(async () => {
+    try {
+      if (await getJobRedis().get(`dawrem:cancel:${jobId}`)) controller.abort();
+    } catch (error) {
+      console.error('[JOB_CANCEL_POLL_ERROR]', jobId, error);
+    }
+  }, 1_000);
+  cancelPoll.unref?.();
+
+  try {
+    await runJobPipeline(job, controller.signal);
+  } catch (err) {
+    console.error(`[JOB_FAILED] Job ${jobId} failed:`, err);
+    job.status = controller.signal.aborted ? 'Cancelled' : 'Failed';
+    job.error = controller.signal.aborted ? 'Download cancelled.' : (err as Error)?.message || 'Media download failed.';
+    job.updatedAt = Date.now();
+    await saveJobState(job, true);
+  } finally {
+    clearInterval(cancelPoll);
+    jobControllers.delete(jobId);
+    jobChildren.delete(jobId);
+  }
+}
+
+export async function cancelDownloadJob(jobId: string): Promise<'not_found' | 'not_running' | DownloadJob> {
+  const job = await getDownloadJob(jobId);
   if (!job) return 'not_found';
   if (job.status === 'Completed' || job.status === 'Failed' || job.status === 'Cancelled') return 'not_running';
 
+  await getJobRedis().set(`dawrem:cancel:${jobId}`, '1', { ex: JOB_TTL_SECONDS });
   const controller = jobControllers.get(jobId);
-  if (!controller) return 'not_running';
-
-  controller.abort();
+  controller?.abort();
   jobChildren.get(jobId)?.kill('SIGTERM');
   job.status = 'Cancelled';
   job.error = 'Download cancelled.';
   job.updatedAt = Date.now();
-  saveJobState(job);
+  await saveJobState(job, true);
   return job;
 }
 
@@ -326,10 +349,21 @@ async function runJobPipeline(job: DownloadJob, signal: AbortSignal): Promise<vo
       throw new FileSizeLimitError();
     }
 
-    // 4. Mark job as completed immediately
+    // Function instances have separate local filesystems, so publish the finished
+    // artifact to Blob before exposing the Completed state to progress polling.
+    const blobPath = await uploadCompletedMedia(
+      job.id,
+      finalPath,
+      job.fileName || `dawrem-media.${targetExtension}`,
+      job.mimeType || 'application/octet-stream'
+    );
+    await removeTempFile(finalPath);
+
+    // 4. Mark completed only after the shared artifact is available.
     job.status = 'Completed';
     job.progress = 100;
-    job.finalFilePath = finalPath;
+    job.blobPath = blobPath;
+    job.finalFilePath = undefined;
     const finalFileSize = finalStats.size;
     job.downloadedBytes = finalFileSize || job.totalBytes;
     job.totalBytes = job.downloadedBytes;
@@ -337,12 +371,12 @@ async function runJobPipeline(job: DownloadJob, signal: AbortSignal): Promise<vo
     job.totalFormatted = formatBytes(job.totalBytes);
     job.speedFormatted = 'Complete';
     job.updatedAt = Date.now();
-    saveJobState(job);
+    await saveJobState(job, true);
   } catch (err: unknown) {
     job.status = signal.aborted ? 'Cancelled' : 'Failed';
     job.error = signal.aborted ? 'Download cancelled.' : (err as Error)?.message || 'Download pipeline failed.';
     job.updatedAt = Date.now();
-    saveJobState(job);
+    await saveJobState(job, true);
 
     // Cleanup raw files on failure
     if (tempVideoPath) await removeTempFile(tempVideoPath).catch(() => {});
@@ -602,6 +636,12 @@ async function downloadViaYtDlp(
     signal.addEventListener('abort', abortProcess, { once: true });
 
     let stderrData = '';
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      ytProcess.kill('SIGTERM');
+    }, APP_CONFIG.downloadTimeoutMs);
+    timeout.unref?.();
 
     ytProcess.stdout.on('data', (chunk: Buffer) => {
       const text = chunk.toString();
@@ -660,10 +700,15 @@ async function downloadViaYtDlp(
     });
 
     ytProcess.on('close', (code) => {
+      clearTimeout(timeout);
       signal.removeEventListener('abort', abortProcess);
       jobChildren.delete(job.id);
       if (signal.aborted) {
         reject(new Error('Download cancelled.'));
+        return;
+      }
+      if (timedOut) {
+        reject(new Error('Download timed out while retrieving media from the provider.'));
         return;
       }
       if (code === 0) {
@@ -718,25 +763,24 @@ async function downloadViaYtDlp(
     });
 
     ytProcess.on('error', (err) => {
+      clearTimeout(timeout);
+      jobChildren.delete(job.id);
+      signal.removeEventListener('abort', abortProcess);
       reject(new Error(`Failed to spawn yt-dlp: ${err.message}`));
     });
   });
 }
 
-// Sweep completed jobs memory and disk cache periodically
-setInterval(() => {
+// Bound the process-local acceleration cache. Durable job expiry is handled by Redis TTL.
+const jobCleanupInterval = setInterval(() => {
   const cutoff = Date.now() - 30 * 60 * 1000;
   for (const [id, job] of jobsRegistry.entries()) {
     if (job.createdAt < cutoff) {
-      if (job.finalFilePath) {
-        removeTempFile(job.finalFilePath).catch(() => {});
-      }
       jobsRegistry.delete(id);
-      try {
-        const filePath = path.join(getJobsStateDir(), `${id}.json`);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      } catch {}
+      lastPersistedAt.delete(id);
+      jobWriteQueues.delete(id);
     }
   }
 }, 5 * 60 * 1000);
+jobCleanupInterval.unref?.();
 

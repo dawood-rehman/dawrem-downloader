@@ -13,6 +13,14 @@ const nextConfig = {
     ],
   },
   serverExternalPackages: ['fluent-ffmpeg', '@ffmpeg-installer/ffmpeg', '@ffprobe-installer/ffprobe', 'yt-dlp-exec'],
+  outputFileTracingIncludes: {
+    '/api/analyze': ['./node_modules/yt-dlp-exec/bin/yt-dlp'],
+    '/api/download': [
+      './node_modules/yt-dlp-exec/bin/yt-dlp',
+      './node_modules/@ffmpeg-installer/linux-x64/**/*',
+      './node_modules/@ffprobe-installer/linux-x64/**/*',
+    ],
+  },
 };
 
 export default nextConfig;
