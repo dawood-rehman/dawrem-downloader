@@ -1,6 +1,7 @@
 import { PlatformHandler, MediaAnalysisResult } from './types';
 import { getMediaMetadataWithYtDlp, extractAvailableFormats } from './ytdl-helper';
 import { formatDuration } from '../media/formatter';
+import { DownloaderError } from '../errors/downloader-errors';
 
 export class YouTubeHandler implements PlatformHandler {
   public readonly platformId = 'youtube' as const;
@@ -28,7 +29,16 @@ export class YouTubeHandler implements PlatformHandler {
       const host = parsed.hostname.toLowerCase().replace(/^www\./, '').replace(/^m\./, '');
 
       if (host === 'youtu.be') {
-        videoId = parsed.pathname.replace(/^\//, '').split('/')[0];
+        const pathSegments = parsed.pathname.split('/').filter(Boolean);
+        videoId = pathSegments[0] || null;
+        if (pathSegments.length !== 1 || !videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+          throw new DownloaderError(
+            'Malformed YouTube short URL.',
+            'INVALID_YOUTUBE_URL',
+            400,
+            'This YouTube link looks incomplete. Copy the full video link from YouTube and try again.'
+          );
+        }
       } else if (parsed.pathname.includes('/shorts/')) {
         const parts = parsed.pathname.split('/shorts/')[1];
         videoId = parts ? parts.split('/')[0] : null;
@@ -37,10 +47,12 @@ export class YouTubeHandler implements PlatformHandler {
       }
 
       // If video ID found, normalize to clean canonical watch URL without tracking parameters
-      if (videoId && /^[a-zA-Z0-9_-]{6,15}$/.test(videoId)) {
+      if (videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
         normalizedUrl = `https://www.youtube.com/watch?v=${videoId}`;
       }
-    } catch {}
+    } catch (error) {
+      if (error instanceof DownloaderError) throw error;
+    }
 
     const data = await getMediaMetadataWithYtDlp(normalizedUrl);
     const availableFormats = extractAvailableFormats(data);
