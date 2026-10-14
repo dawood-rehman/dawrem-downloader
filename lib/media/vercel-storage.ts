@@ -71,6 +71,7 @@ export async function createPrivateDownloadUrl(pathname: string): Promise<string
     pathname,
     operation: 'get',
     validUntil,
+    access: 'private',
   });
   return getDownloadUrl(presignedUrl);
 }

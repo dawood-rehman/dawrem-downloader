@@ -1,5 +1,5 @@
 import { analyzeMedia } from '../lib/platforms';
-import { createAndStartDownloadJob, getDownloadJob } from '../lib/media/download-job';
+import { createAndStartDownloadJob, getDownloadJob, runDownloadJob } from '../lib/media/download-job';
 import { detectPlatform } from '../lib/platforms/detector';
 import fs from 'fs';
 
@@ -21,7 +21,7 @@ async function delay(ms: number) {
 async function waitForJobCompletion(jobId: string, maxWaitMs = 60000): Promise<any> {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
-    const job = getDownloadJob(jobId);
+    const job = await getDownloadJob(jobId);
     if (!job) throw new Error('Job not found');
     if (job.status === 'Completed') return job;
     if (job.status === 'Failed') throw new Error(job.error || 'Job failed');
@@ -54,6 +54,7 @@ async function runAllTests() {
       formatId: audioFmt.formatId,
       platform: 'youtube',
     });
+    void runDownloadJob(job.id);
 
     const finishedJob = await waitForJobCompletion(job.id, 45000);
     console.log(`[PASS] YouTube Download Completed: ${finishedJob.fileName} (${finishedJob.downloadedFormatted})`);
@@ -127,6 +128,7 @@ async function runAllTests() {
       platform: 'tiktok',
       removeWatermark: true,
     });
+    void runDownloadJob(jobTT.id);
 
     const finishedTT = await waitForJobCompletion(jobTT.id, 45000);
     console.log(`[PASS] TikTok Download Completed: ${finishedTT.fileName} (${finishedTT.downloadedFormatted})`);
@@ -184,6 +186,7 @@ async function runAllTests() {
       formatId: imgFmt.formatId,
       platform: 'pinterest',
     });
+    void runDownloadJob(jobPin.id);
 
     const finishedPin = await waitForJobCompletion(jobPin.id, 20000);
     console.log(`[PASS] Pinterest Download Completed: ${finishedPin.fileName} (${finishedPin.downloadedFormatted})`);

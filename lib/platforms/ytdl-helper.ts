@@ -63,10 +63,10 @@ export async function getMediaMetadataWithYtDlp(url: string): Promise<YtDlpDumpR
         options.extractorArgs = clientArg;
       }
 
-      const rawResult = await youtubedl.exec(url, options, {
+      const result = await youtubedl(url, options, {
         timeout: APP_CONFIG.analysisTimeoutMs,
       });
-      return JSON.parse(rawResult.stdout) as YtDlpDumpResult;
+      return result as YtDlpDumpResult;
     } catch (err: unknown) {
       lastError = err;
       const errMessage = (err as Error)?.message || String(err);
